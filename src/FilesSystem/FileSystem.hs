@@ -10,18 +10,25 @@ import Data.List (sortBy)
 
 data FileInfo = FileInfo { paths :: [FilePath] }
 
-getRecursiveContents :: FilePath -> IO [FilePath]
+getRecursiveContents :: FilePath -> IO [FilePath] -> IO [FilePath]
 
-getRecursiveContents topdir = do
-  names <- handle returnEmptyList $ getDirectoryContents topdir
-  let properNames = filter (`notElem` [".", ".."]) names
-  paths <- forM properNames $ \name -> do
-    let path = topdir </> name
-    isDirectory <- doesDirectoryExist path
-    if isDirectory
-      then getRecursiveContents path
-      else return [path]
-  return (concat paths)
+getRecursiveContents topdir paths = do
+  names  <- handle returnEmptyList $ getDirectoryContents topdir
+  f names paths
+  where 
+      f [] paths_ = paths_
+      f (p:ps) paths_ = do 
+                           f ps (addDirectoryEntry p paths_)
+      addDirectoryEntry "."   ps = ps
+      addDirectoryEntry ".."  ps = ps 
+      addDirectoryEntry entry ps = do
+           let currentPath = topdir </> entry
+           isDirectory <- doesDirectoryExist currentPath
+           if isDirectory
+               then getRecursiveContents currentPath ps
+               else do 
+                      ps_ <- ps
+                      return (currentPath : ps_)
   
 returnEmptyList :: IOException -> IO [FilePath]
 returnEmptyList _ = return []
@@ -36,7 +43,7 @@ doNothing _ = return Nothing
 
 getFileSizes :: FilePath -> IO [(FilePath, Integer)]
 getFileSizes path = do
-    paths <- getRecursiveContents path
+    paths <- getRecursiveContents path (return [])
     f paths
     where f [] = return []
           f (p:ps) = do 
@@ -49,6 +56,7 @@ getFileSizes path = do
 
 testPath :: FilePath
 testPath = "C:\\Users\\D025630\\Documents"
+-- testPath = "C:\\HANA_Studio"
 
 createFileSizeHistogram :: [(FilePath, Integer)] -> Map.Map Integer Integer
 createFileSizeHistogram [] = Map.empty
