@@ -1,5 +1,7 @@
 module Num where
 
+import Data.List (intercalate)
+
 -----------------------------------------------------------------
 -- Symbolic/units manipulation
 -----------------------------------------------------------------
@@ -66,7 +68,7 @@ prettyShow (BinaryArith op a b) =
         in pa ++ pop ++ pb
  
 prettyShow (UnaryArith opstr a) = 
-     opstr ++ "(" ++ show a ++ ")"
+     opstr ++ "(" ++ prettyShow a ++ ")"
       
 op2str :: Op -> String
 op2str Plus = "+"
@@ -81,5 +83,47 @@ simpleParen (Symbol x) = prettyShow (Symbol x)
 simpleParen x@(BinaryArith _ _ _) = "(" ++ prettyShow x ++ ")"
 simpleParen x@(UnaryArith _ _) = prettyShow x
 
+{- Showing a SymbolicManip calls the prettyShow function on it -}
 instance (Show a, Num a) => Show (SymbolicManip a) where
     show a = prettyShow a
+
+
+simplify :: (Eq a, Num a) => SymbolicManip a -> SymbolicManip a
+simplify (BinaryArith op ia ib) =
+    let sa = simplify ia
+        sb = simplify ib
+    in case (op, sa, sb) of 
+               (Mul, Number 1, b) -> b
+               (Mul, a, Number 1) -> a
+               (Mul, a, Number 0) -> 0
+               (Mul, Number 0, b) -> 0
+               (Plus, a, Number 0) -> a
+               (Plus, Number 0, b) -> b
+               (Minus, a, Number 0) -> a
+               _ -> BinaryArith op sa sb
+simplify (UnaryArith op a) = UnaryArith op (simplify a)
+simplify x = x
+rpnShow :: (Show a, Num a) => SymbolicManip a -> String
+rpnShow i = 
+    let toList (Number x) = [show x]
+        toList (Symbol x) = []
+        toList (BinaryArith op a b) = toList a ++ toList b ++ [op2str op]
+        toList (UnaryArith op a) = toList a ++ [op]
+    in intercalate " " (toList i)
+     
+test :: Num a => a
+test = 3*5 + 7
+
+data Units a = Units a (SymbolicManip a)
+               deriving (Eq)
+           
+instance (Eq a, Num a) => Num (Units a) where
+    (Units xa ua) + (Units xb ub)
+        | ua == ub = Units (xa + xb) ua
+        | otherwise = error "Mis-matched units in add or subtract"
+    (Units xa ua) - (Units xb ub) = (Units xa ua) + (Units (xb * (-1)) ub)
+    (Units xa ua) * (Units xb ub) = Units (xa * xb) (ua * ub)
+    negate (Units xa ua) = Units (negate xa) ua
+    abs (Units xa ua) = Units (abs xa) ua
+    signum (Units xa _) = Units (signum xa) (Number 1)
+    fromInteger i = Units (fromInteger i) (Number 1)
