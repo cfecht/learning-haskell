@@ -12,5 +12,11 @@ executable LearningHaskell
   other-modules:   
                    HelloWorld,
                    RecursiveContents,
-                   Basicio
+                   Basicio,
+                   Lookup,
+                   Buildmap,
+                   Funcrecs,
+                   Numsimple,
+                   Num,
+                   FileSystem
 
