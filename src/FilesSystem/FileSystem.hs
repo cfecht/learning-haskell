@@ -6,7 +6,7 @@ import System.Directory (doesDirectoryExist, getDirectoryContents)
 import System.FilePath ((</>))
 import System.IO
 import Control.Exception (IOException, handle, bracket)
-import qualified Data.Map as Map 
+import qualified Data.Map.Strict as Map 
 import Data.List (sortBy)
 import Crypto.Hash.SHA1 (hashlazy)
 import qualified Data.ByteString as Strict
@@ -16,35 +16,63 @@ import Text.Printf (printf)
 type FileHash = Strict.ByteString
 type FileSize = Integer
 
-data IdenticalFiles = IdenticalFiles FileSize FileHash [FilePath]
-
-insert :: FilePath -> FileSize -> FileHash -> [IdenticalFiles] -> [IdenticalFiles]
-insert path size hash [] = [IdenticalFiles size hash [path]]
-insert path size hash ((IdenticalFiles size' hash' paths) : ids) = 
-    if size == size' && hash == hash'
-        then (IdenticalFiles size hash (path : paths)) : ids
-        else (IdenticalFiles size' hash' paths) : insert path size hash ids
+data IdentitySet = SingleFileIdentitySet FilePath
+                 | MultipleFilesIdentitySet FileHash [FilePath]
+                   deriving (Show)
+                    
 
 data State = State {
                paths :: [FilePath],
-               numberOfFiles :: Integer,
-               equalSizedFiles :: Map.Map Integer [FilePath]
+               identityMap :: Map.Map FileSize [IdentitySet],
+               counter :: Integer
              } deriving (Show)
              
 initialState :: State
 initialState = State {
                  paths = [],
-                 numberOfFiles = 0,
-                 equalSizedFiles = Map.empty
+                 identityMap = Map.empty,
+                 counter = 0
                }
              
-addPath :: FilePath -> FileSize -> FileHash-> State -> State
-addPath path size hash state =
-    State {
-       paths = path : (paths state)
-     , numberOfFiles = (numberOfFiles state) + 1
-     , equalSizedFiles = Map.insertWith (++) size [path] (equalSizedFiles state)
-    }
+addPath :: FilePath -> FileSize-> [IdentitySet] -> State -> State
+addPath path size idSets state =
+    state {
+       paths         = path : (paths state),
+       identityMap   = Map.insert size idSets (identityMap state),
+       counter       = (counter state) + 1
+     }
+  
+    
+addPathIO :: FilePath -> FileSize -> IO State -> IO State
+addPathIO path size state = do
+    state' <- state
+    case Map.lookup size (identityMap state') of
+      Nothing -> return $ addPath path size [SingleFileIdentitySet path] state'
+      Just idSets -> do 
+                      newIdSets <- addPathToIdSets idSets path
+                      return $ addPath path size newIdSets state'
+
+addPathToIdSets ::[IdentitySet] -> FilePath -> IO [IdentitySet] 
+addPathToIdSets [] path  =  return [SingleFileIdentitySet path]
+addPathToIdSets ((SingleFileIdentitySet path') : idsets) path = do 
+    hash <-hashFile path
+    hash' <- hashFile path'
+    let hash1 = getJust hash
+    let hash2 = getJust hash'
+    if hash1 == hash2 
+        then return $ (MultipleFilesIdentitySet hash1 [path', path]) : idsets
+        else do idset' <- addPathToIdSets idsets path
+                return $ SingleFileIdentitySet path' : idset'
+     
+addPathToIdSets ((MultipleFilesIdentitySet hash paths) : idsets) path = do
+    hash' <- hashFile path
+    let hash1 = getJust hash'
+    if hash == hash1
+        then return $ (MultipleFilesIdentitySet hash1 (path : paths)) : idsets
+        else do idset' <- addPathToIdSets idsets path
+                return $ (MultipleFilesIdentitySet hash paths) : idset'       
+        
+
 
 foldM' :: Monad m => [a] -> (a -> m b -> m b) -> m b -> m b
 foldM' [] f = id
@@ -60,9 +88,8 @@ addDirectoryEntry path state = do
         then getRecursiveContents path state
         else do 
               fileSize <- getFileSize path
-              hash <- hashFile path  
-              if isJust fileSize && isJust hash
-                  then fmap (addPath path (getJust fileSize) (getJust hash)) state
+              if isJust fileSize
+                  then addPathIO path (getJust fileSize) state
                   else state
          
                   
@@ -92,14 +119,16 @@ doNothing e = do
 
 
 testPath :: FilePath
-testPath = "C:\\Users\\D025630\\Documents"
+--testPath = "C:\\Users\\D025630\\Documents"
 --testPath = "C:\\HANA_Studio"
+--testPath = "D:\\mp3"
+testPath = "D:\\Benutzer\\Familie Fecht\\Eigene Dokumente"
 
        
 main :: IO ()
 main = do 
          state <- getRecursiveContents testPath (return initialState)
-         putStrLn $ show (numberOfFiles state)
+         putStrLn $ show (length (paths state))
          
 
 toHex :: Strict.ByteString -> String
