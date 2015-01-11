@@ -12,6 +12,7 @@ import Crypto.Hash.SHA1 (hashlazy)
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import Text.Printf (printf)
+import qualified Data.Foldable as F
 
 type FileHash = Strict.ByteString
 type FileSize = Integer
@@ -117,6 +118,19 @@ doNothing e = do
     putStrLn $ show e
     return Nothing    
 
+data FileDirectory a = FileDirectory [FilePath] (FilePath -> IO [FilePath]) (FilePath -> IO Bool)
+
+instance Foldable FileDirectory where
+  foldMap f (FileDirectory [] _ _) = mempty
+  foldMap f (FileDirectory (path :: paths) getDirectoryContents isDirectory) = 
+      f path `mappend` (foldMap f (FileDirectory path' getDirectoryContents isDirectory)
+      where path' = do
+                      isDir <- isDirectory path
+                      if isDir 
+                         then 
+                         else return 
+                         
+                 
 
 testPath :: FilePath
 --testPath = "C:\\Users\\D025630\\Documents"
