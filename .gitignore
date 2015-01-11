@@ -1,3 +1,6 @@
 .settings/*
 .dist-buildwrapper/*
 /.dist-buildwrapper/
+*.o
+*.hi
+*.exe
